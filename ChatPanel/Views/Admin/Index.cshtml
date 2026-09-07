@@ -1,0 +1,258 @@
+﻿@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Moderasyon Paneli</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            background: #fafafa;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+            .header select {
+                padding: 8px 12px;
+                border-radius: 4px;
+                border: 1px solid #ddd;
+            }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .column {
+            background: white;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 400px;
+        }
+
+            .column h3 {
+                margin-top: 0;
+            }
+
+        .message {
+            background: #f5f5f5;
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+
+            .message .meta {
+                font-size: 12px;
+                color: #666;
+                margin-bottom: 5px;
+            }
+
+            .message .text {
+                margin: 5px 0;
+            }
+
+        .actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+        }
+
+        button {
+            cursor: pointer;
+            padding: 6px 14px;
+            border: none;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .approve {
+            background: #4caf50;
+            color: white;
+        }
+
+        .delete {
+            background: transparent;
+            color: #f44336;
+            border: 1px solid #f44336;
+        }
+
+        .logout {
+            color: #2196f3;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .empty {
+            color: #999;
+            text-align: center;
+            padding: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <select id="roomSelect">
+            <option value="default-room">default-room</option>
+        </select>
+        <a asp-action="Logout" asp-controller="Account" class="logout"> LOG OUT</a>
+    </div>
+
+    <div class="container">
+        <div class="column">
+            <h3>Admin (Onay Bekleyen)</h3>
+            <div id="pendingList"><div class="empty">Yükleniyor...</div></div>
+        </div>
+        <div class="column">
+            <h3>User (Yayında)</h3>
+            <div id="approvedList"><div class="empty">Yükleniyor...</div></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, onValue, off } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "@ViewBag.FirebaseApiKey",
+            authDomain: "@ViewBag.FirebaseAuthDomain",
+            databaseURL: "@ViewBag.FirebaseDatabaseUrl",
+            projectId: "@ViewBag.FirebaseProjectId"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        let currentRef = null;
+
+                const roomsRef = ref(db, 'rooms');
+        onValue(roomsRef, (snapshot) => {
+            const rooms = snapshot.val() || {};
+            const select = document.getElementById('roomSelect');
+            const currentValue = select.value;
+            select.innerHTML = Object.keys(rooms)
+                .map(id => `<option value="${id}">${id}</option>`)
+                .join('');
+            if (Object.keys(rooms).includes(currentValue)) {
+                select.value = currentValue;
+            } else if (select.options.length > 0) {
+                listen(select.value); // ilk odayı otomatik dinle
+            }
+        }, { onlyOnce: false });
+
+        function timeAgo(ts) {
+            if (!ts) return '';
+            const diff = Date.now() - ts;
+            const mins = Math.floor(diff / 60000);
+            if (mins < 1) return 'az önce';
+            if (mins < 60) return `${mins} dk önce`;
+            const hours = Math.floor(mins / 60);
+            if (hours < 24) return `${hours} saat önce`;
+            const days = Math.floor(hours / 24);
+            if (days < 30) return `${days} gün önce`;
+            const months = Math.floor(days / 30);
+            return `${months} ay önce`;
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str || '';
+            return div.innerHTML;
+        }
+
+        function render(roomId, messages) {
+            const pending = document.getElementById('pendingList');
+            const approved = document.getElementById('approvedList');
+            pending.innerHTML = '';
+            approved.innerHTML = '';
+
+            const pendingList = messages.filter(m => !m.isApproved);
+            const approvedList = messages.filter(m => m.isApproved);
+
+            if (pendingList.length === 0) pending.innerHTML = '<div class="empty">Onay bekleyen mesaj yok</div>';
+            if (approvedList.length === 0) approved.innerHTML = '<div class="empty">Yayında mesaj yok</div>';
+
+            pendingList.forEach(m => {
+                const el = document.createElement('div');
+                el.className = 'message';
+                el.innerHTML = `
+                    <div class="meta">${timeAgo(new Date(m.createdAt).getTime())}</div>
+                    <div class="text"><strong>${escapeHtml(m.username)}:</strong> ${escapeHtml(m.text)}</div>
+                    <div class="actions">
+                        <button class="delete" data-action="Delete" data-id="${m.messageId}">🗑 Sil</button>
+                        <button class="approve" data-action="Approve" data-id="${m.messageId}">✓ Onayla</button>
+                    </div>`;
+                pending.appendChild(el);
+            });
+
+            approvedList.forEach(m => {
+                const el = document.createElement('div');
+                el.className = 'message';
+                el.innerHTML = `
+                    <div class="meta">Approved by: ${escapeHtml(m.approvedBy || '-')} · ${timeAgo(new Date(m.createdAt).getTime())}</div>
+                    <div class="text"><strong>${escapeHtml(m.username)}:</strong> ${escapeHtml(m.text)}</div>
+                    <div class="actions">
+                        <button class="delete" data-action="Delete" data-id="${m.messageId}"> Sil</button>
+                        <span>❤ ${m.likeCount || 0}</span>
+                    </div>`;
+                approved.appendChild(el);
+            });
+        }
+
+        function listen(roomId) {
+            if (currentRef) off(currentRef);
+            currentRef = ref(db, `rooms/${roomId}/messages`);
+
+            onValue(currentRef, snapshot => {
+                const data = snapshot.val() || {};
+                const list = Object.entries(data)
+                    .map(([id, m]) => ({ messageId: id, ...m }))
+                    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                render(roomId, list);
+            });
+        }
+
+        // Aksiyon delegasyonu
+        document.addEventListener('click', async e => {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+
+            const action = btn.dataset.action;
+            const messageId = btn.dataset.id;
+            const roomId = document.getElementById('roomSelect').value;
+            btn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('roomId', roomId);
+            formData.append('messageId', messageId);
+
+            try {
+                const res = await fetch(`/Admin/${action}`, { method: 'POST', body: formData });
+                const data = await res.json();
+                if (!data.success) alert('İşlem başarısız: ' + (data.error || ''));
+                // Başarılıysa DOM'a dokunmuyoruz — onValue zaten değişikliği yakalayıp yeniden render edecek
+            } catch (err) {
+                alert('Hata: ' + err.message);
+                btn.disabled = false;
+            }
+        });
+
+        document.getElementById('roomSelect').addEventListener('change', e => listen(e.target.value));
+        listen(document.getElementById('roomSelect').value);
+        console.log("Dinlenen oda:", document.getElementById('roomSelect').value);
+    </script>
+</body>
+</html>
