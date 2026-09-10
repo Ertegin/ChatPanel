@@ -32,13 +32,13 @@ namespace ChatPanel.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetMessages(string roomId)
-        {
-            if (!IsAuthenticated) return Unauthorized();
+        //public async Task<IActionResult> GetMessages(string roomId)
+        //{
+        //    if (!IsAuthenticated) return Unauthorized();
 
-            var messages = await _firebase.GetMessagesAsync(roomId);
-            return Json(messages);
-        }
+        //    var messages = await _firebase.GetMessagesAsync(roomId);
+        //    return Json(messages);
+        //}
 
         [HttpPost]
         public async Task<IActionResult> Approve(string roomId, string messageId)
